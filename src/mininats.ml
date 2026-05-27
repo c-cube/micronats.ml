@@ -214,17 +214,6 @@ let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
   if not (String.starts_with ~prefix:"INFO" info_line) then
     failwith (Printf.sprintf "expected INFO, got: %S" info_line);
   send_connect t ?token ?user ?pass ();
-  let rec wait_connect () =
-    match Eio.Buf_read.line buf with
-    | line when String.starts_with ~prefix:"-ERR" line ->
-      t.shutdown ();
-      failwith line
-    | "PING" ->
-      send_pong t;
-      wait_connect ()
-    | _ -> ()
-  in
-  wait_connect ();
   Eio.Fiber.fork ~sw (fun () -> try reader_loop t buf with End_of_file -> ());
   t
 
