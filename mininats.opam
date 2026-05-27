@@ -5,7 +5,8 @@ synopsis: "Minimal NATS client library using Eio"
 depends: [
   "ocaml" {>= "5.0"}
   "dune" {>= "3.0"}
-  "eio"
+  "eio" {>= "1.0"}
+  "eio_posix" {with-test}
   "odoc" {with-doc}
 ]
 build: [

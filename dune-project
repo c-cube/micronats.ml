@@ -9,4 +9,5 @@
  (depends
   (ocaml (>= 5.0))
   dune
-  eio))
+  (eio (>= 1.0))
+  (eio_posix :with-test)))
