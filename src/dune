@@ -1,0 +1,4 @@
+(library
+ (public_name mininats)
+ (name mininats)
+ (libraries eio))
