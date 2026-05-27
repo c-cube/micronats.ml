@@ -1,8 +1,10 @@
 (** Minimal NATS client using Eio.
 
-    Connect to a NATS server, publish, subscribe, and make requests. The
-    connection lives on a switch; close it by calling {!close} or finishing the
-    switch. *)
+    Connect to a NATS server, publish, subscribe, and make requests. Supports
+    plain messages and messages with headers (HPUB/HMSG). The connection lives
+    on a switch; close it by calling {!close} or finishing the switch. *)
+
+(** {2 Types} *)
 
 type t
 (** A connection to a NATS server. *)
@@ -10,30 +12,57 @@ type t
 type sub
 (** A subscription handle. *)
 
+type header = string * string
+(** A header key-value pair. *)
+
 (** {2 Connection} *)
 
-val connect : sw:Eio.Switch.t -> net:_ Eio.Net.t -> unit -> t
+val connect :
+  sw:Eio.Switch.t ->
+  net:_ Eio.Net.t ->
+  ?token:string ->
+  ?user:string ->
+  ?pass:string ->
+  unit ->
+  t
 (** Connect to [localhost:4222]. *)
 
 val connect_to :
-  sw:Eio.Switch.t -> net:_ Eio.Net.t -> host:string -> port:int -> unit -> t
+  sw:Eio.Switch.t ->
+  net:_ Eio.Net.t ->
+  ?token:string ->
+  ?user:string ->
+  ?pass:string ->
+  host:string ->
+  port:int ->
+  unit ->
+  t
 (** Connect to a NATS server at [host]:[port]. *)
 
 (** {2 Messaging} *)
 
 val pub : t -> subject:string -> ?reply_to:string -> string -> unit
-(** Publish a message. *)
+(** Publish a plain message. *)
+
+val hpub :
+  t ->
+  subject:string ->
+  ?reply_to:string ->
+  ?headers:header list ->
+  string ->
+  unit
+(** Publish a message with headers. *)
 
 val sub :
   t ->
   sw:Eio.Switch.t ->
   subject:string ->
   queue:string option ->
-  f:(?reply_to:string -> string -> unit) ->
+  f:(?reply_to:string -> ?headers:header list -> string -> unit) ->
   sub
 (** Subscribe to [subject] with an optional [queue] group. The callback receives
-    an optional reply-to subject and the payload. Auto-unsubscribed when [sw]
-    finishes. *)
+    optional reply-to, optional headers, and the payload. Auto-unsubscribed when
+    [sw] finishes. *)
 
 val unsub : t -> max_msgs:int option -> sub -> unit
 (** Explicitly unsubscribe. *)
@@ -52,3 +81,18 @@ val request :
 
 val close : t -> unit
 (** Shut down the underlying socket, causing the reader fiber to exit. *)
+
+(** {2 Retry} *)
+
+val with_retry :
+  clock:_ Eio.Time.clock ->
+  delay:float ->
+  max_retries:int option ->
+  connect:(unit -> t) ->
+  f:(t -> 'a) ->
+  unit ->
+  'a
+(** [with_retry ~clock ~delay ~max_retries ~connect ~f ()] calls [connect]
+    repeatedly on failure, sleeping [delay] seconds between attempts. If
+    [max_retries] is [Some n], gives up after [n] retries. The connection is
+    automatically closed after [f] returns. *)

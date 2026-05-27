@@ -7,10 +7,11 @@ let () =
   Eio.Switch.run @@ fun sw ->
   let nats = Mininats.connect ~sw ~net () in
   traceln "connected!";
+  (* test pub/sub *)
   let got = ref None in
   let _sub =
     Mininats.sub nats ~sw ~subject:"test.hello" ~queue:None
-      ~f:(fun ?reply_to:_ msg ->
+      ~f:(fun ?reply_to:_ ?headers:_ msg ->
         traceln "GOT: %S" msg;
         got := Some msg)
   in
@@ -18,10 +19,31 @@ let () =
   Eio.Time.sleep clock 0.3;
   (match !got with
   | Some "world42" ->
-    traceln "PASS: pub/sub works";
+    traceln "PASS: pub/sub";
+    (* test hpub/hsub *)
+    let hgot = ref None in
+    let _hsub =
+      Mininats.sub nats ~sw ~subject:"test.headers" ~queue:None
+        ~f:(fun ?reply_to:_ ?headers payload ->
+          traceln "GOT HEADERS: %s payload:%S"
+            (match headers with
+            | Some hs ->
+              String.concat ", " (List.map (fun (k, v) -> k ^ "=" ^ v) hs)
+            | None -> "(none)")
+            payload;
+          hgot := Some payload)
+    in
+    Mininats.hpub nats ~subject:"test.headers"
+      ~headers:[ "X-Foo", "bar"; "X-Baz", "42" ]
+      "hello-headers";
+    Eio.Time.sleep clock 0.3;
+    (match !hgot with
+    | Some "hello-headers" -> traceln "PASS: hpub/hsub"
+    | _ -> traceln "FAIL: hpub/hsub");
+    (* test request/reply *)
     let _service =
       Mininats.sub nats ~sw ~subject:"test.echo" ~queue:None
-        ~f:(fun ?reply_to msg ->
+        ~f:(fun ?reply_to ?headers:_ msg ->
           match reply_to with
           | Some rt -> Mininats.pub nats ~subject:rt msg
           | None -> ())
@@ -29,22 +51,19 @@ let () =
     (match
        Mininats.request nats ~sw ~clock ~subject:"test.echo" ~timeout:2.0 "ping"
      with
-    | Ok "ping" -> traceln "PASS: request/reply works"
+    | Ok "ping" -> traceln "PASS: request/reply"
     | r ->
       traceln "FAIL: request/reply: %s"
         (match r with
         | Ok s -> s
         | Error _ -> "timeout"));
+    (* test timeout *)
     (match
        Mininats.request nats ~sw ~clock ~subject:"test.nobody" ~timeout:0.2
          "hello"
      with
-    | Error `Timeout -> traceln "PASS: timeout works"
+    | Error `Timeout -> traceln "PASS: timeout"
     | _ -> traceln "FAIL: timeout")
-  | _ ->
-    traceln "FAIL: pub/sub got %s"
-      (match !got with
-      | Some s -> s
-      | None -> "nothing"));
+  | _ -> traceln "FAIL: pub/sub");
   Mininats.close nats;
   traceln "all tests passed"
