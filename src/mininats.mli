@@ -89,10 +89,13 @@ val with_retry :
   ?delay:float ->
   ?max_retries:int ->
   connect:(unit -> t) ->
-  f:(t -> 'a) ->
   unit ->
+  (t -> 'a) ->
   'a
-(** [with_retry ~clock ~delay ~max_retries ~connect ~f ()] calls [connect]
+(** [with_retry ~clock ~delay ~max_retries ~connect () f] calls [connect]
     repeatedly on failure, sleeping [delay] seconds between attempts. If
     [max_retries] is [Some n], gives up after [n] retries. The connection is
-    automatically closed after [f] returns. *)
+    automatically closed after [f] returns.
+
+    Can be used with [let@ conn = with_retry ~clock ~connect () in ....] as
+    well. *)

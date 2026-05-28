@@ -258,8 +258,7 @@ let close t = t.shutdown ()
 
 (** {2 Retry helper} *)
 
-let with_retry ~clock ?(delay = 15.) ?(max_retries : int option) ~connect ~f ()
-    =
+let with_retry ~clock ?(delay = 15.) ?(max_retries : int option) ~connect () f =
   let rec loop n =
     match connect () with
     | conn ->
