@@ -227,24 +227,25 @@ let pub t ~subject ?reply_to payload = send_pub t ~subject ~reply_to ~payload
 let hpub t ~subject ?reply_to ?(headers = []) payload =
   send_hpub t ~subject ~reply_to ~headers ~payload
 
-let unsub t ~max_msgs sid =
+let unsub t ?max_msgs sid =
   send_unsub t ~sid ~max_msgs;
   Eio.Mutex.use_rw ~protect:true t.subs_mutex (fun () ->
       Hashtbl.remove t.subs sid)
 
-let sub t ~sw ~subject ~queue ~f =
+let sub ~sw ~subject ?queue ~f t =
   let sid = Atomic.fetch_and_add t.next_sid 1 in
   send_sub t ~sid subject queue;
   Eio.Mutex.use_rw ~protect:true t.subs_mutex (fun () ->
       Hashtbl.replace t.subs sid { queue; f });
-  Eio.Switch.on_release sw (fun () -> unsub t ~max_msgs:None sid);
+  Eio.Switch.on_release sw (fun () -> unsub t sid);
   sid
 
 let request t ~sw ~clock ~subject ~timeout payload =
+  (* TODO: improve on this? counter? UUID? *)
   let inbox = Printf.sprintf "_INBOX.%06x" (Random.bits () land 0xFFFFFF) in
   let p, r = Eio.Promise.create () in
   let _sub =
-    sub t ~sw ~subject:inbox ~queue:None ~f:(fun ?reply_to:_ ?headers:_ m ->
+    sub t ~sw ~subject:inbox ~f:(fun ?reply_to:_ ?headers:_ m ->
         Eio.Promise.resolve r m)
   in
   pub t ~subject ~reply_to:inbox payload;

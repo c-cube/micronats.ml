@@ -54,17 +54,17 @@ val hpub :
 (** Publish a message with headers. *)
 
 val sub :
-  t ->
   sw:Eio.Switch.t ->
   subject:string ->
-  queue:string option ->
+  ?queue:string ->
   f:(?reply_to:string -> ?headers:header list -> string -> unit) ->
+  t ->
   sub
 (** Subscribe to [subject] with an optional [queue] group. The callback receives
     optional reply-to, optional headers, and the payload. Auto-unsubscribed when
     [sw] finishes. *)
 
-val unsub : t -> max_msgs:int option -> sub -> unit
+val unsub : t -> ?max_msgs:int -> sub -> unit
 (** Explicitly unsubscribe. *)
 
 val request :
