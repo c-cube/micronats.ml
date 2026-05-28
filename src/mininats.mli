@@ -87,6 +87,9 @@ val request :
 
 (** {2 Lifecycle} *)
 
+val wait : t -> unit
+(** Await for the client to be done (exit, shutdown, etc.) *)
+
 val close : t -> unit
 (** Shut down the underlying socket, causing the reader fiber to exit. *)
 

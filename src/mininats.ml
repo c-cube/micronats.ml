@@ -40,6 +40,7 @@ type t = {
   subs: sub_data Int_tbl.t;
   subs_mutex: Eio.Mutex.t;
   next_sid: int Atomic.t;
+  is_done: unit Eio.Promise.t;
   shutdown: unit -> unit;
 }
 
@@ -219,6 +220,7 @@ let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let flow = Eio.Net.connect ~sw net addr in
   let buf = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) flow in
+  let is_done, resolve_is_done = Eio.Promise.create () in
   let t =
     {
       flow :> Eio.Flow.sink_ty Eio.Flow.sink;
@@ -226,7 +228,13 @@ let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
       subs = Int_tbl.create 16;
       subs_mutex = Eio.Mutex.create ();
       next_sid = Atomic.make 1;
-      shutdown = (fun () -> Eio.Flow.shutdown flow `All);
+      is_done;
+      shutdown =
+        (fun () ->
+          if not (Eio.Promise.is_resolved is_done) then (
+            Eio.Promise.resolve resolve_is_done ();
+            Eio.Flow.shutdown flow `All
+          ));
     }
   in
   let info_line = Eio.Buf_read.line buf in
@@ -274,6 +282,7 @@ let request self ~sw ~clock ~subject ~timeout payload =
   | Ok x -> Ok x
   | Error `Timeout -> Error `Timeout
 
+let wait self = Eio.Promise.await self.is_done
 let close self = self.shutdown ()
 
 (** {2 Retry helper} *)
