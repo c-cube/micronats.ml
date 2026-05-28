@@ -86,8 +86,8 @@ val close : t -> unit
 
 val with_retry :
   clock:_ Eio.Time.clock ->
-  delay:float ->
-  max_retries:int option ->
+  ?delay:float ->
+  ?max_retries:int ->
   connect:(unit -> t) ->
   f:(t -> 'a) ->
   unit ->
