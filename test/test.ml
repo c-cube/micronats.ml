@@ -10,10 +10,9 @@ let () =
   (* test pub/sub *)
   let got = ref None in
   let _sub =
-    Mininats.sub nats ~sw ~subject:"test.hello" ~queue:None
-      ~f:(fun ?reply_to:_ ?headers:_ msg ->
-        traceln "GOT: %S" msg;
-        got := Some msg)
+    Mininats.sub nats ~sw ~subject:"test.hello" (fun (msg : Mininats.msg) ->
+        traceln "GOT: %S" msg.payload;
+        got := Some msg.payload)
   in
   Mininats.pub nats ~subject:"test.hello" "world42";
   Eio.Time.sleep clock 0.3;
@@ -23,15 +22,14 @@ let () =
     (* test hpub/hsub *)
     let hgot = ref None in
     let _hsub =
-      Mininats.sub nats ~sw ~subject:"test.headers" ~queue:None
-        ~f:(fun ?reply_to:_ ?headers payload ->
+      Mininats.sub nats ~sw ~subject:"test.headers" (fun (msg : Mininats.msg) ->
           traceln "GOT HEADERS: %s payload:%S"
-            (match headers with
+            (match msg.headers with
             | Some hs ->
               String.concat ", " (List.map (fun (k, v) -> k ^ "=" ^ v) hs)
             | None -> "(none)")
-            payload;
-          hgot := Some payload)
+            msg.payload;
+          hgot := Some msg.payload)
     in
     Mininats.hpub nats ~subject:"test.headers"
       ~headers:[ "X-Foo", "bar"; "X-Baz", "42" ]
@@ -42,10 +40,9 @@ let () =
     | _ -> traceln "FAIL: hpub/hsub");
     (* test request/reply *)
     let _service =
-      Mininats.sub nats ~sw ~subject:"test.echo" ~queue:None
-        ~f:(fun ?reply_to ?headers:_ msg ->
-          match reply_to with
-          | Some rt -> Mininats.pub nats ~subject:rt msg
+      Mininats.sub nats ~sw ~subject:"test.echo" (fun (msg : Mininats.msg) ->
+          match msg.reply_to with
+          | Some rt -> Mininats.pub nats ~subject:rt msg.payload
           | None -> ())
     in
     (match

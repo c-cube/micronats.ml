@@ -53,12 +53,20 @@ val hpub :
   unit
 (** Publish a message with headers. *)
 
+type msg = {
+  subject: string;
+  sid: int;
+  reply_to: string option;
+  headers: header list option;
+  payload: string;
+}
+
 val sub :
+  t ->
   sw:Eio.Switch.t ->
   subject:string ->
   ?queue:string ->
-  f:(?reply_to:string -> ?headers:header list -> string -> unit) ->
-  t ->
+  (msg -> unit) ->
   sub
 (** Subscribe to [subject] with an optional [queue] group. The callback receives
     optional reply-to, optional headers, and the payload. Auto-unsubscribed when
