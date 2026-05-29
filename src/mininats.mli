@@ -41,12 +41,13 @@ val connect_to :
 
 (** {2 Messaging} *)
 
-val pub : t -> subject:string -> ?reply_to:string -> string -> unit
-(** Publish a plain message. *)
+val pub : t -> subject:string list -> ?reply_to:string -> string -> unit
+(** Publish a plain message. Subject components are joined with '.'; each must
+    be non-empty and must not contain '.', ' ', '>', or '*'. *)
 
 val hpub :
   t ->
-  subject:string ->
+  subject:string list ->
   ?reply_to:string ->
   ?headers:header list ->
   string ->
@@ -54,7 +55,7 @@ val hpub :
 (** Publish a message with headers. *)
 
 type msg = {
-  subject: string;
+  subject: string list;
   sid: int;
   reply_to: string option;
   headers: header list option;
@@ -64,13 +65,14 @@ type msg = {
 val sub :
   t ->
   sw:Eio.Switch.t ->
-  subject:string ->
+  subject:string list ->
   ?queue:string ->
   (msg -> unit) ->
   sub
 (** Subscribe to [subject] with an optional [queue] group. The callback receives
     optional reply-to, optional headers, and the payload. Auto-unsubscribed when
-    [sw] finishes. *)
+    [sw] finishes. Subject components are joined with '.'; each must be
+    non-empty and must not contain '.', ' ', '>', or '*'. *)
 
 val unsub : t -> ?max_msgs:int -> sub -> unit
 (** Explicitly unsubscribe. *)
@@ -79,7 +81,7 @@ val request :
   t ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.clock ->
-  subject:string ->
+  subject:string list ->
   timeout:float ->
   string ->
   (string, [> `Timeout ]) result

@@ -8,6 +8,25 @@ let crlf = "\r\n"
 let hdr_line = "NATS/1.0\r\n"
 let spf = Printf.sprintf
 
+let is_bad_char = function
+  | '.' | ' ' | '>' | '*' -> true
+  | _ -> false
+
+let subject_of_list = function
+  | [] -> invalid_arg "subject must have at least one component"
+  | parts ->
+    List.iter
+      (fun s ->
+        if s = "" then invalid_arg "subject component must not be empty";
+        String.iter
+          (fun c ->
+            if is_bad_char c then
+              invalid_arg
+                (spf "subject component %S contains invalid char '%c'" s c))
+          s)
+      parts;
+    String.concat "." parts
+
 module Log = (val Logs.src_log (Logs.Src.create "mininats"))
 
 module Int_tbl = Hashtbl.Make (struct
@@ -22,7 +41,7 @@ end)
 type header = string * string
 
 type msg = {
-  subject: string;
+  subject: string list;
   sid: int;
   reply_to: string option;
   headers: header list option;
@@ -138,7 +157,13 @@ module Proto = struct
       ) else
         None
     in
-    { subject; sid; reply_to; headers; payload }
+    {
+      subject = String.split_on_char '.' subject;
+      sid;
+      reply_to;
+      headers;
+      payload;
+    }
 
   let parse_msg line buf =
     let parts =
@@ -149,7 +174,7 @@ module Proto = struct
       let payload = Eio.Buf_read.take (int_of_string size_s) buf in
       check_crlf (Eio.Buf_read.take 2 buf);
       {
-        subject;
+        subject = String.split_on_char '.' subject;
         sid = int_of_string sid_s;
         reply_to = None;
         headers = None;
@@ -159,7 +184,7 @@ module Proto = struct
       let payload = Eio.Buf_read.take (int_of_string size_s) buf in
       check_crlf (Eio.Buf_read.take 2 buf);
       {
-        subject;
+        subject = String.split_on_char '.' subject;
         sid = int_of_string sid_s;
         reply_to = Some reply_to;
         headers = None;
@@ -193,7 +218,8 @@ let dispatch_msg self msg : unit =
       try f msg
       with exn ->
         Log.warn (fun k ->
-            k "callback for sub on %s raised: %s" msg.subject
+            k "callback for sub on %s raised: %s"
+              (String.concat "." msg.subject)
               (Printexc.to_string exn)))
     f_opt
 
@@ -250,9 +276,11 @@ let connect ~sw ~net ?token ?user ?pass () =
 (** {2 Public API} *)
 
 let pub self ~subject ?reply_to payload =
+  let subject = subject_of_list subject in
   send_pub self ~subject ~reply_to ~payload
 
 let hpub self ~subject ?reply_to ?(headers = []) payload =
+  let subject = subject_of_list subject in
   send_hpub self ~subject ~reply_to ~headers ~payload
 
 let unsub self ?max_msgs sid =
@@ -261,6 +289,7 @@ let unsub self ?max_msgs sid =
       Int_tbl.remove self.subs sid)
 
 let sub self ~sw ~subject ?queue f =
+  let subject = subject_of_list subject in
   let sid = Atomic.fetch_and_add self.next_sid 1 in
   send_sub self ~sid subject queue;
   Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
@@ -271,9 +300,10 @@ let sub self ~sw ~subject ?queue f =
 let request self ~sw ~clock ~subject ~timeout payload =
   (* TODO: improve on this? counter? UUID? *)
   let inbox = spf "_INBOX.%06x" (Random.bits () land 0xFFFFFF) in
+  let inbox_parts = String.split_on_char '.' inbox in
   let p, r = Eio.Promise.create () in
   let _sub =
-    sub self ~sw ~subject:inbox (fun m -> Eio.Promise.resolve r m.payload)
+    sub self ~sw ~subject:inbox_parts (fun m -> Eio.Promise.resolve r m.payload)
   in
   pub self ~subject ~reply_to:inbox payload;
   match
