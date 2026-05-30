@@ -43,7 +43,7 @@ val connect_to :
 
 val pub : t -> subject:string list -> ?reply_to:string -> string -> unit
 (** Publish a plain message. Subject components are joined with '.'; each must
-    be non-empty and must not contain '.', ' ', '>', or '*'. *)
+    be non-empty and must not contain '.' or ' '. or '>' or '*'. *)
 
 val hpub :
   t ->
@@ -72,7 +72,8 @@ val sub :
 (** Subscribe to [subject] with an optional [queue] group. The callback receives
     optional reply-to, optional headers, and the payload. Auto-unsubscribed when
     [sw] finishes. Subject components are joined with '.'; each must be
-    non-empty and must not contain '.', ' ', '>', or '*'. *)
+    non-empty and must not contain '.' or ' '. Wildcards '>' and '*' are
+    allowed. *)
 
 val unsub : t -> ?max_msgs:int -> sub -> unit
 (** Explicitly unsubscribe. *)

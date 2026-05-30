@@ -9,10 +9,14 @@ let hdr_line = "NATS/1.0\r\n"
 let spf = Printf.sprintf
 
 let is_bad_char = function
+  | '.' | ' ' -> true
+  | _ -> false
+
+let is_bad_char_strict = function
   | '.' | ' ' | '>' | '*' -> true
   | _ -> false
 
-let subject_of_list = function
+let make_subject ~is_bad = function
   | [] -> invalid_arg "subject must have at least one component"
   | parts ->
     List.iter
@@ -20,12 +24,15 @@ let subject_of_list = function
         if s = "" then invalid_arg "subject component must not be empty";
         String.iter
           (fun c ->
-            if is_bad_char c then
+            if is_bad c then
               invalid_arg
                 (spf "subject component %S contains invalid char '%c'" s c))
           s)
       parts;
     String.concat "." parts
+
+let subject_of_list = make_subject ~is_bad:is_bad_char_strict
+let subject_of_list_for_sub = make_subject ~is_bad:is_bad_char
 
 module Log = (val Logs.src_log (Logs.Src.create "mininats"))
 
@@ -289,7 +296,7 @@ let unsub self ?max_msgs sid =
       Int_tbl.remove self.subs sid)
 
 let sub self ~sw ~subject ?queue f =
-  let subject = subject_of_list subject in
+  let subject = subject_of_list_for_sub subject in
   let sid = Atomic.fetch_and_add self.next_sid 1 in
   send_sub self ~sid subject queue;
   Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
