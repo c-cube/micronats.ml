@@ -1,0 +1,4 @@
+(executable
+ (name notify)
+ (modules notify)
+ (libraries mininats eio_main))
