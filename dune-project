@@ -1,11 +1,11 @@
 (lang dune 3.0)
-(name mininats)
+(name micronats)
 (version 0.1)
 (generate_opam_files true)
 
 (package
- (name mininats)
- (synopsis "Minimal NATS client library using Eio")
+ (name micronats)
+ (synopsis "Micro NATS client library using Eio")
  (depends
   (ocaml (>= 5.0))
   dune

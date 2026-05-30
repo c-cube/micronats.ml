@@ -4,29 +4,29 @@
     [notify-send]. The subject suffix becomes the notification title; the
     message payload becomes the notification body. *)
 
-let spf = Printf.sprintf
-
-let notify_send ~title ~body =
-  let cmd =
-    spf "notify-send %s %s" (Filename.quote title) (Filename.quote body)
-  in
-  ignore (Sys.command cmd)
+let notify_send ~sw ~proc_mgr ~title ~body =
+  Eio.Fiber.fork ~sw (fun () ->
+      match Eio.Process.run proc_mgr [ "notify-send"; title; body ] with
+      | () -> ()
+      | exception _ -> ())
 
 let main ~host ~port =
   Eio_main.run (fun env ->
       let net = Eio.Stdenv.net env in
+      let proc_mgr = Eio.Stdenv.process_mgr env in
       Eio.Switch.run (fun sw ->
-          let conn = Mininats.connect_to ~sw ~net ~host ~port () in
+          let conn = Micronats.connect_to ~sw ~net ~host ~port () in
           let _sub =
-            Mininats.sub conn ~sw ~subject:[ "user"; "notify"; ">" ] (fun msg ->
+            Micronats.sub conn ~sw ~subject:[ "user"; "notify"; ">" ]
+              (fun msg ->
                 let title =
-                  match msg.Mininats.subject with
+                  match msg.Micronats.subject with
                   | "user" :: "notify" :: rest -> String.concat "." rest
                   | _ -> String.concat "." msg.subject
                 in
-                notify_send ~title ~body:msg.payload)
+                notify_send ~sw ~proc_mgr ~title ~body:msg.payload)
           in
-          Mininats.wait conn))
+          Micronats.wait conn))
 
 let () =
   let host = ref "localhost" in
