@@ -331,16 +331,24 @@ let connect_with_addr ~sw ~net ?token ?user ?pass addr =
   if not (String.starts_with ~prefix:"INFO" info_line) then
     failwith (spf "expected INFO, got: %S" info_line);
   send_connect t ?token ?user ?pass ();
-  Eio.Fiber.fork ~sw (fun () -> try reader_loop t buf with End_of_file -> ());
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      try reader_loop t buf with End_of_file -> `Stop_daemon);
   t
 
-let connect_to ~sw ~net ?token ?user ?pass ~host ~port () =
-  let addr = `Tcp (parse_ip host, port) in
+let connect ~sw ~net ?token ?user ?pass ?host ?(port = 4222) () =
+  let host =
+    match host with
+    | Some h -> parse_ip h
+    | None -> Eio.Net.Ipaddr.V4.loopback
+  in
+  let addr = `Tcp (host, port) in
   connect_with_addr ~sw ~net ?token ?user ?pass addr
 
-let connect ~sw ~net ?token ?user ?pass () =
-  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 4222) in
-  connect_with_addr ~sw ~net ?token ?user ?pass addr
+let close self = self.shutdown ()
+
+let with_connect ~sw ~net ?token ?user ?pass ?host ?port () f =
+  let c = connect ~sw ~net ?token ?user ?pass ?host ?port () in
+  Fun.protect (fun () -> f c) ~finally:(fun () -> close c)
 
 let pub self ~subject ?reply_to payload =
   let subject = subject_of_list subject in
@@ -367,7 +375,6 @@ let request self ~sw:_ ~clock ~subject ~timeout payload =
     Error `Timeout
 
 let wait self = Eio.Promise.await self.is_done
-let close self = self.shutdown ()
 
 (** {2 Retry helper} *)
 

@@ -23,22 +23,27 @@ val connect :
   ?token:string ->
   ?user:string ->
   ?pass:string ->
+  ?host:string ->
+  ?port:int ->
   unit ->
   t
-(** Connect to [localhost:4222]. *)
+(** Connect to a NATS server at [host]:[port]. [host] must be an IPv4 or IPv6
+    address.
+    @param host ip address, or localhost by default
+    @param port port, or 4222 by default *)
 
-val connect_to :
+val with_connect :
   sw:Eio.Switch.t ->
   net:_ Eio.Net.t ->
   ?token:string ->
   ?user:string ->
   ?pass:string ->
-  host:string ->
-  port:int ->
+  ?host:string ->
+  ?port:int ->
   unit ->
-  t
-(** Connect to a NATS server at [host]:[port]. [host] must be an IPv4 or IPv6
-    address. *)
+  (t -> 'a) ->
+  'a
+(** Combines {!connect} and {!close} *)
 
 (** {2 Messaging} *)
 

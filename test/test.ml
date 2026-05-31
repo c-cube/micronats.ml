@@ -1,5 +1,7 @@
 open Eio.Std
 
+let ( let@ ) = ( @@ )
+
 let () =
   Eio_posix.run @@ fun env ->
   let net = Eio.Stdenv.net env in
@@ -70,4 +72,38 @@ let () =
     | _ -> traceln "FAIL: timeout")
   | _ -> traceln "FAIL: pub/sub");
   Micronats.close nats;
+  (* test connect_to with IPv4 *)
+  Eio.Switch.run (fun sw ->
+      let@ nats4 =
+        Micronats.with_connect ~sw ~net ~host:"127.0.0.1" ~port:4222 ()
+      in
+      let got4 = ref None in
+      let _sub4 =
+        Micronats.sub nats4 ~sw ~subject:[ "test"; "ipv4" ]
+          (fun (msg : Micronats.msg) -> got4 := Some msg.payload)
+      in
+      Micronats.pub nats4 ~subject:[ "test"; "ipv4" ] "via-ipv4";
+      Eio.Time.sleep clock 0.3;
+      match !got4 with
+      | Some "via-ipv4" -> traceln "PASS: connect_to IPv4"
+      | _ -> traceln "FAIL: connect_to IPv4");
+  (* test connect_to with IPv6 *)
+  (match
+     Eio.Switch.run (fun sw ->
+         let@ nats6 =
+           Micronats.with_connect ~sw ~net ~host:"::1" ~port:4222 ()
+         in
+         let got6 = ref None in
+         let _sub6 =
+           Micronats.sub nats6 ~sw ~subject:[ "test"; "ipv6" ]
+             (fun (msg : Micronats.msg) -> got6 := Some msg.payload)
+         in
+         Micronats.pub nats6 ~subject:[ "test"; "ipv6" ] "via-ipv6";
+         Eio.Time.sleep clock 0.3;
+         match !got6 with
+         | Some "via-ipv6" -> traceln "PASS: connect_to IPv6"
+         | _ -> traceln "FAIL: connect_to IPv6")
+   with
+  | () -> ()
+  | exception _ -> traceln "SKIP: connect_to IPv6 (not listening on ::1)");
   traceln "all tests passed"
