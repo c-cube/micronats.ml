@@ -2,6 +2,13 @@
 opam-version: "2.0"
 version: "0.1"
 synopsis: "Micro NATS client library using Eio"
+description: "A lightweight NATS client using eio"
+maintainer: ["Simon Cruanes"]
+authors: ["Simon Cruanes"]
+license: "MIT"
+tags: ["nats" "messaging" "pubsub" "eio"]
+homepage: "https://github.com/c-cube/micronats.ml"
+bug-reports: "https://github.com/c-cube/micronats.ml/issues"
 depends: [
   "ocaml" {>= "5.0"}
   "dune" {>= "3.0"}
