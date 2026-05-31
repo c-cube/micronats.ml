@@ -43,6 +43,12 @@ module Int_tbl = Hashtbl.Make (struct
   let hash = Hashtbl.hash
 end)
 
+(** Build a random blob that uniquely identify this client *)
+let make_inbox_prefix () =
+  let st = Random.State.make_self_init () in
+  let bits () = Random.State.bits st in
+  spf "%08x%08x%08x%08x%08x" (bits ()) (bits ()) (bits ()) (bits ()) (bits ())
+
 (** {2 Connection state} *)
 
 type header = string * string
@@ -68,6 +74,10 @@ type t = {
   next_sid: int Atomic.t;
   is_done: unit Eio.Promise.t;
   shutdown: unit -> unit;
+  inbox_prefix: string;
+  inbox_counter: int Atomic.t;
+  inbox_promises: string Eio.Promise.u Int_tbl.t;
+  inbox_promises_mutex: Eio.Mutex.t;
 }
 
 type sub = int
@@ -212,23 +222,47 @@ end
 
 open Proto
 
+(** Handle replies for our requests. Returns [true] if this was actually a reply
+    we were waiting for, [false] otherwise. *)
+let dispatch_inbox_reply self msg : bool =
+  match msg.subject with
+  | [ "_INBOX"; _prefix; counter_s ] when _prefix = self.inbox_prefix ->
+    let counter = int_of_string counter_s in
+    let resolver_opt =
+      Eio.Mutex.use_rw ~protect:true self.inbox_promises_mutex (fun () ->
+          match Int_tbl.find_opt self.inbox_promises counter with
+          | Some resolver ->
+            Int_tbl.remove self.inbox_promises counter;
+            Some resolver
+          | None -> None)
+    in
+    (match resolver_opt with
+    | None -> false
+    | Some r ->
+      Eio.Promise.resolve r msg.payload;
+      true)
+  | _ -> false
+
 (** Dispatch received [msg] to subscribers *)
 let dispatch_msg self msg : unit =
-  let f_opt =
-    Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
-        match Int_tbl.find_opt self.subs msg.sid with
-        | None -> None
-        | Some s -> Some s.f)
-  in
-  Option.iter
-    (fun f ->
-      try f msg
-      with exn ->
-        Log.warn (fun k ->
-            k "callback for sub on %s raised: %s"
-              (String.concat "." msg.subject)
-              (Printexc.to_string exn)))
-    f_opt
+  let dispatched_reply = dispatch_inbox_reply self msg in
+  if not dispatched_reply then (
+    let f_opt =
+      Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
+          match Int_tbl.find_opt self.subs msg.sid with
+          | None -> None
+          | Some s -> Some s.f)
+    in
+    Option.iter
+      (fun f ->
+        try f msg
+        with exn ->
+          Log.warn (fun k ->
+              k "callback for sub on %s raised: %s"
+                (String.concat "." msg.subject)
+                (Printexc.to_string exn)))
+      f_opt
+  )
 
 (** {2 Reader loop} *)
 
@@ -249,11 +283,26 @@ let rec reader_loop t buf =
 
 (** {2 Connection lifecycle} *)
 
+let unsub self ?max_msgs sid =
+  send_unsub self ~sid ~max_msgs;
+  Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
+      Int_tbl.remove self.subs sid)
+
+let sub self ~sw ~subject ?queue f =
+  let subject = subject_of_list_for_sub subject in
+  let sid = Atomic.fetch_and_add self.next_sid 1 in
+  send_sub self ~sid subject queue;
+  Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
+      Int_tbl.replace self.subs sid { queue; f });
+  Eio.Switch.on_release sw (fun () -> unsub self sid);
+  sid
+
 let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let flow = Eio.Net.connect ~sw net addr in
   let buf = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) flow in
   let is_done, resolve_is_done = Eio.Promise.create () in
+  let inbox_prefix = make_inbox_prefix () in
   let t =
     {
       flow :> Eio.Flow.sink_ty Eio.Flow.sink;
@@ -268,7 +317,14 @@ let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
             Eio.Promise.resolve resolve_is_done ();
             Eio.Flow.shutdown flow `All
           ));
+      inbox_prefix;
+      inbox_counter = Atomic.make 0;
+      inbox_promises = Int_tbl.create 16;
+      inbox_promises_mutex = Eio.Mutex.create ();
     }
+  in
+  let _inbox_sub : sub =
+    sub t ~sw ~subject:[ "_INBOX"; inbox_prefix; "*" ] (fun _ -> ())
   in
   let info_line = Eio.Buf_read.line buf in
   if not (String.starts_with ~prefix:"INFO" info_line) then
@@ -290,34 +346,21 @@ let hpub self ~subject ?reply_to ?(headers = []) payload =
   let subject = subject_of_list subject in
   send_hpub self ~subject ~reply_to ~headers ~payload
 
-let unsub self ?max_msgs sid =
-  send_unsub self ~sid ~max_msgs;
-  Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
-      Int_tbl.remove self.subs sid)
-
-let sub self ~sw ~subject ?queue f =
-  let subject = subject_of_list_for_sub subject in
-  let sid = Atomic.fetch_and_add self.next_sid 1 in
-  send_sub self ~sid subject queue;
-  Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
-      Int_tbl.replace self.subs sid { queue; f });
-  Eio.Switch.on_release sw (fun () -> unsub self sid);
-  sid
-
-let request self ~sw ~clock ~subject ~timeout payload =
-  (* TODO: improve on this? counter? UUID? *)
-  let inbox = spf "_INBOX.%06x" (Random.bits () land 0xFFFFFF) in
-  let inbox_parts = String.split_on_char '.' inbox in
+let request self ~sw:_ ~clock ~subject ~timeout payload =
+  let counter = Atomic.fetch_and_add self.inbox_counter 1 in
+  let inbox = spf "_INBOX.%s.%d" self.inbox_prefix counter in
   let p, r = Eio.Promise.create () in
-  let _sub =
-    sub self ~sw ~subject:inbox_parts (fun m -> Eio.Promise.resolve r m.payload)
-  in
+  Eio.Mutex.use_rw ~protect:true self.inbox_promises_mutex (fun () ->
+      Int_tbl.replace self.inbox_promises counter r);
   pub self ~subject ~reply_to:inbox payload;
   match
     Eio.Time.with_timeout clock timeout (fun () -> Ok (Eio.Promise.await p))
   with
   | Ok x -> Ok x
-  | Error `Timeout -> Error `Timeout
+  | Error `Timeout ->
+    Eio.Mutex.use_rw ~protect:true self.inbox_promises_mutex (fun () ->
+        Int_tbl.remove self.inbox_promises counter);
+    Error `Timeout
 
 let wait self = Eio.Promise.await self.is_done
 let close self = self.shutdown ()
