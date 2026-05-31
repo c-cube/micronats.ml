@@ -37,7 +37,8 @@ val connect_to :
   port:int ->
   unit ->
   t
-(** Connect to a NATS server at [host]:[port]. *)
+(** Connect to a NATS server at [host]:[port]. [host] must be an IPv4 or IPv6
+    address. *)
 
 (** {2 Messaging} *)
 

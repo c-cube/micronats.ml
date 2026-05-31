@@ -1,4 +1,4 @@
 (library
  (public_name micronats)
  (name micronats)
- (libraries eio logs))
+ (libraries eio eio.unix logs))

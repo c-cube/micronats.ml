@@ -297,8 +297,9 @@ let sub self ~sw ~subject ?queue f =
   Eio.Switch.on_release sw (fun () -> unsub self sid);
   sid
 
-let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
-  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+let parse_ip host = Eio_unix.Net.Ipaddr.of_unix (Unix.inet_addr_of_string host)
+
+let connect_with_addr ~sw ~net ?token ?user ?pass addr =
   let flow = Eio.Net.connect ~sw net addr in
   let buf = Eio.Buf_read.of_flow ~max_size:(1024 * 1024) flow in
   let is_done, resolve_is_done = Eio.Promise.create () in
@@ -333,10 +334,13 @@ let connect_to ~sw ~net ?token ?user ?pass ~host:_ ~port () =
   Eio.Fiber.fork ~sw (fun () -> try reader_loop t buf with End_of_file -> ());
   t
 
-let connect ~sw ~net ?token ?user ?pass () =
-  connect_to ~sw ~net ?token ?user ?pass ~host:"localhost" ~port:4222 ()
+let connect_to ~sw ~net ?token ?user ?pass ~host ~port () =
+  let addr = `Tcp (parse_ip host, port) in
+  connect_with_addr ~sw ~net ?token ?user ?pass addr
 
-(** {2 Public API} *)
+let connect ~sw ~net ?token ?user ?pass () =
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 4222) in
+  connect_with_addr ~sw ~net ?token ?user ?pass addr
 
 let pub self ~subject ?reply_to payload =
   let subject = subject_of_list subject in
