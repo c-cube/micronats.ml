@@ -12,6 +12,7 @@ bug-reports: "https://github.com/c-cube/micronats.ml/issues"
 depends: [
   "ocaml" {>= "5.0"}
   "dune" {>= "3.0"}
+  "logs"
   "eio" {>= "1.0"}
   "eio_posix" {with-test}
   "odoc" {with-doc}

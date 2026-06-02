@@ -15,6 +15,7 @@
  (depends
   (ocaml (>= 5.0))
   dune
+  logs
   (eio (>= 1.0))
   (eio_posix :with-test))
  (tags (nats messaging pubsub eio)))
