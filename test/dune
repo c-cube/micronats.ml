@@ -1,3 +1,4 @@
 (test
  (name test)
+ (package micronats)
  (libraries micronats eio_posix))
