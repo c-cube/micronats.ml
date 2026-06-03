@@ -1,0 +1,3 @@
+(executable
+ (name basic)
+ (libraries micronats eio_posix))
