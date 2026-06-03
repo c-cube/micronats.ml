@@ -78,7 +78,7 @@ type t = {
   shutdown: unit -> unit;
   inbox_prefix: string;
   inbox_counter: int Atomic.t;
-  inbox_promises: string Eio.Promise.u Int_tbl.t;
+  inbox_promises: msg Eio.Promise.u Int_tbl.t;
   inbox_promises_mutex: Eio.Mutex.t;
 }
 
@@ -241,7 +241,7 @@ let dispatch_inbox_reply self msg : bool =
     (match resolver_opt with
     | None -> false
     | Some r ->
-      Eio.Promise.resolve r msg.payload;
+      Eio.Promise.resolve r msg;
       true)
   | _ -> false
 

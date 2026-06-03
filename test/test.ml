@@ -57,11 +57,11 @@ let () =
        Micronats.request nats ~sw ~clock ~subject:[ "test"; "echo" ]
          ~timeout:2.0 "ping"
      with
-    | Ok "ping" -> traceln "PASS: request/reply"
+    | Ok { payload = "ping"; _ } -> traceln "PASS: request/reply"
     | r ->
       traceln "FAIL: request/reply: %s"
         (match r with
-        | Ok s -> s
+        | Ok s -> s.payload
         | Error _ -> "timeout"));
     (* test timeout *)
     (match

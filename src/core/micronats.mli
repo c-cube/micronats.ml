@@ -91,7 +91,7 @@ val request :
   subject:string list ->
   timeout:float ->
   string ->
-  (string, [> `Timeout ]) result
+  (msg, [> `Timeout ]) result
 (** Send a request, wait for a single reply up to [timeout] seconds. *)
 
 (** {2 Lifecycle} *)
