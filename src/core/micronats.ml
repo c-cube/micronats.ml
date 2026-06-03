@@ -34,7 +34,7 @@ let make_subject ~is_bad = function
 let subject_of_list = make_subject ~is_bad:is_bad_char_strict
 let subject_of_list_for_sub = make_subject ~is_bad:is_bad_char
 
-module Log = (val Logs.src_log (Logs.Src.create "mininats"))
+module Log = (val Logs.src_log (Logs.Src.create "micronats"))
 
 module Int_tbl = Hashtbl.Make (struct
   type t = int
@@ -69,6 +69,7 @@ type sub_data = {
 type t = {
   flow: Eio.Flow.sink_ty Eio.Flow.sink;
   write_mutex: Eio.Mutex.t;
+  sw: Eio.Switch.t;
   subs: sub_data Int_tbl.t;
   subs_mutex: Eio.Mutex.t;
   next_sid: int Atomic.t;
@@ -255,12 +256,14 @@ let dispatch_msg self msg : unit =
     in
     Option.iter
       (fun f ->
-        try f msg
-        with exn ->
-          Log.warn (fun k ->
-              k "callback for sub on %s raised: %s"
-                (String.concat "." msg.subject)
-                (Printexc.to_string exn)))
+        (* run [f] in a fiber *)
+        Eio.Fiber.fork ~sw:self.sw (fun () ->
+            try f msg
+            with exn ->
+              Log.warn (fun k ->
+                  k "callback for sub on %s raised: %s"
+                    (String.concat "." msg.subject)
+                    (Printexc.to_string exn))))
       f_opt
   )
 
@@ -308,6 +311,7 @@ let connect_with_addr ~sw ~net ?token ?user ?pass addr =
     {
       flow :> Eio.Flow.sink_ty Eio.Flow.sink;
       write_mutex = Eio.Mutex.create ();
+      sw;
       subs = Int_tbl.create 16;
       subs_mutex = Eio.Mutex.create ();
       next_sid = Atomic.make 1;
