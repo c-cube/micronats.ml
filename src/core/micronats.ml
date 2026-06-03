@@ -6,6 +6,7 @@
 
 let crlf = "\r\n"
 let hdr_line = "NATS/1.0\r\n"
+let ( let@ ) = ( @@ )
 let spf = Printf.sprintf
 
 let is_bad_char = function
@@ -230,12 +231,12 @@ let dispatch_inbox_reply self msg : bool =
   | [ "_INBOX"; _prefix; counter_s ] when _prefix = self.inbox_prefix ->
     let counter = int_of_string counter_s in
     let resolver_opt =
-      Eio.Mutex.use_rw ~protect:true self.inbox_promises_mutex (fun () ->
-          match Int_tbl.find_opt self.inbox_promises counter with
-          | Some resolver ->
-            Int_tbl.remove self.inbox_promises counter;
-            Some resolver
-          | None -> None)
+      let@ () = Eio.Mutex.use_rw ~protect:true self.inbox_promises_mutex in
+      match Int_tbl.find_opt self.inbox_promises counter with
+      | Some resolver ->
+        Int_tbl.remove self.inbox_promises counter;
+        Some resolver
+      | None -> None
     in
     (match resolver_opt with
     | None -> false
@@ -249,21 +250,21 @@ let dispatch_msg self msg : unit =
   let dispatched_reply = dispatch_inbox_reply self msg in
   if not dispatched_reply then (
     let f_opt =
-      Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
-          match Int_tbl.find_opt self.subs msg.sid with
-          | None -> None
-          | Some s -> Some s.f)
+      let@ () = Eio.Mutex.use_rw ~protect:true self.subs_mutex in
+      match Int_tbl.find_opt self.subs msg.sid with
+      | None -> None
+      | Some s -> Some s.f
     in
     Option.iter
       (fun f ->
         (* run [f] in a fiber *)
-        Eio.Fiber.fork ~sw:self.sw (fun () ->
-            try f msg
-            with exn ->
-              Log.warn (fun k ->
-                  k "callback for sub on %s raised: %s"
-                    (String.concat "." msg.subject)
-                    (Printexc.to_string exn))))
+        let@ () = Eio.Fiber.fork ~sw:self.sw in
+        try f msg
+        with exn ->
+          Log.warn (fun k ->
+              k "callback for sub on %s raised: %s"
+                (String.concat "." msg.subject)
+                (Printexc.to_string exn)))
       f_opt
   )
 
@@ -288,8 +289,8 @@ let rec reader_loop t buf =
 
 let unsub self ?max_msgs sid =
   send_unsub self ~sid ~max_msgs;
-  Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
-      Int_tbl.remove self.subs sid)
+  let@ () = Eio.Mutex.use_rw ~protect:true self.subs_mutex in
+  Int_tbl.remove self.subs sid
 
 let sub self ~sw ~subject ?queue f =
   let subject = subject_of_list_for_sub subject in
