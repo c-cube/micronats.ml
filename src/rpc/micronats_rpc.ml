@@ -1,5 +1,15 @@
 open Pbrt_services.Value_mode
 
+(* RPC on top of NATS.
+
+   for the unary RPC, a normal request using [reply_to] is used,
+   and the servers use a queue to ensure only one of them replies.
+
+   Headers are used to carry additional information:
+    - "encoding: json|proto" for wire encoding (if absent, json)
+    - "status: ok|err" for success/failure
+*)
+
 open struct
   module Nats = Micronats
   module Client = Pbrt_services.Client
@@ -23,18 +33,27 @@ open struct
   let ( let@ ) = ( @@ )
   let spf = Printf.sprintf
 
-  let try_catch prefix f =
+  let with_log_err_ prefix f =
     try f ()
     with exn ->
+      let bt = Printexc.get_raw_backtrace () in
       Log.err (fun k ->
           k "Error while handling %s: %s" (String.concat "." prefix)
-            (Printexc.to_string exn))
+            (Printexc.to_string exn));
+      Printexc.raise_with_backtrace exn bt
+
+  let header_opt (msg : Nats.msg) key : string option =
+    Option.bind msg.headers (List.assoc_opt key)
 
   let guess_enc (msg : Nats.msg) : [ `Proto | `Json ] =
-    match Option.bind msg.headers (List.assoc_opt "encoding") with
+    match header_opt msg "encoding" with
     | Some "proto" -> `Proto
     | Some "json" | None -> `Json
     | Some other -> failwith (spf "unknown encoding %S" other)
+
+  let enc_to_string = function
+    | `Proto -> "proto"
+    | `Json -> "json"
 
   let decode_server (rpc : _ Server.rpc) (msg : Nats.msg) =
     match guess_enc msg with
@@ -80,17 +99,38 @@ let add_service (nats : Nats.t) ~(sw : Eio.Switch.t) (server : handler Server.t)
     | H_one (rpc, f) ->
       let queue = "micronatsrpc" in
       let subject = prefix @ [ rpc.name ] in
-      Nats.sub nats ~sw ~subject ~queue (fun msg ->
-          let@ () = try_catch subject in
-          let reply_to =
-            match msg.reply_to with
-            | None -> failwith "expected a reply-to"
-            | Some r -> r
+
+      let handle_req (msg : Nats.msg) =
+        match msg.reply_to with
+        | None ->
+          Log.err (fun k ->
+              k "expected a reply-to in %s" (String.concat "." msg.subject))
+        | Some reply_to ->
+          let res, ok, encoding =
+            try
+              let@ () = with_log_err_ subject in
+              let req, encoding = decode_server rpc msg in
+              let res = f req in
+              let res = encode_server rpc encoding res in
+              res, true, encoding
+            with exn -> Printexc.to_string exn, false, `Json
           in
-          let req, encoding = decode_server rpc msg in
-          let res = f req in
-          let res = encode_server rpc encoding res in
-          Nats.pub nats ~subject:(String.split_on_char '.' reply_to) res)
+          let headers =
+            [
+              "encoding", enc_to_string encoding;
+              ( "status",
+                if ok then
+                  "ok"
+                else
+                  "err" );
+            ]
+          in
+          Nats.hpub nats ~headers
+            ~subject:(String.split_on_char '.' reply_to)
+            res
+      in
+
+      Nats.sub nats ~sw ~subject ~queue handle_req
       |> (ignore : Nats.sub -> unit)
     | H_gather (_rpc, _f) -> ()
     (* TODO: fix the inbox (we need it to survive multiple responses,
@@ -116,15 +156,21 @@ let add_service (nats : Nats.t) ~(sw : Eio.Switch.t) (server : handler Server.t)
   List.iter add_handler server.handlers
 
 let send_request (nats : Nats.t) ?(timeout = 10.) ~(sw : Eio.Switch.t) ~clock
-    (rpc : ('req, unary, 'res, unary) Client.rpc) (req : 'req) : 'res =
+    (rpc : ('req, unary, 'res, unary) Client.rpc) (req : 'req) :
+    'res Eio.Promise.or_exn =
   let subject =
     [ "natsrpc" ] @ rpc.package @ [ rpc.service_name; rpc.rpc_name ]
   in
-  let@ () = try_catch subject in
+
+  let@ () = Eio.Fiber.fork_promise ~sw in
   let encoding = `Json in
   match
     Nats.request nats ~sw ~clock ~subject ~timeout
       (encode_client rpc encoding req)
   with
   | Error `Timeout -> failwith "timeout"
-  | Ok msg -> decode_client rpc encoding msg
+  | Ok msg ->
+    (match header_opt msg "status" with
+    | Some "ok" -> decode_client rpc encoding msg.payload
+    | Some "err" -> failwith msg.payload
+    | _ -> failwith "missing `status` header")

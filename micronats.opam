@@ -17,6 +17,7 @@ depends: [
   "eio_posix" {with-test}
   "odoc" {with-doc}
 ]
+depopts: ["pbrt" "pbrt_services"]
 build: [
   ["dune" "subst"] {dev}
   [
