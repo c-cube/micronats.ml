@@ -15,7 +15,7 @@ let main ~host ~port =
       let net = Eio.Stdenv.net env in
       let proc_mgr = Eio.Stdenv.process_mgr env in
       Eio.Switch.run (fun sw ->
-          let conn = Micronats.connect_to ~sw ~net ~host ~port () in
+          let conn = Micronats.connect ~sw ~net ~host ~port () in
           let _sub =
             Micronats.sub conn ~sw ~subject:[ "user"; "notify"; ">" ]
               (fun msg ->
