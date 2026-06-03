@@ -1,0 +1,6 @@
+(library
+ (name micronats_rpc)
+ (public_name micronats.rpc)
+ (synopsis "protobuf RPC over NATS")
+ (optional) ; protobuf, logs
+ (libraries micronats pbrt pbrt_services logs))
