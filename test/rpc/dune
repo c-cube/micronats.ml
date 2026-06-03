@@ -1,0 +1,25 @@
+(rule
+ (targets calculator.ml calculator.mli)
+ (deps calculator.proto)
+ (action
+  (run
+   ocaml-protoc
+   -I
+   .
+   --binary
+   --yojson
+   --services
+   --ml_out
+   .
+   calculator.proto)))
+
+(library
+ (name calculator)
+ (modules calculator)
+ (libraries pbrt pbrt_services pbrt_yojson yojson))
+
+(test
+ (name test_rpc)
+ (package micronats)
+ (libraries micronats micronats.rpc eio_posix calculator)
+ (modules test_rpc))

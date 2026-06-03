@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package calc;
+
+service Calc {
+  rpc Add(AddReq) returns (AddRes);
+  rpc Sub(SubReq) returns (SubRes);
+  rpc Mul(MulReq) returns (MulRes);
+}
+
+message AddReq {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message AddRes {
+  int32 result = 1;
+}
+
+message SubReq {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message SubRes {
+  int32 result = 1;
+}
+
+message MulReq {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message MulRes {
+  int32 result = 1;
+}
