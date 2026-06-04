@@ -1,4 +1,4 @@
-# micronats — Minimal NATS client for OCaml/Eio
+# micronats: minimal NATS client for OCaml/Eio
 
 A lightweight [NATS](https://nats.io) client library for OCaml >= 5.01 built on [Eio](https://github.com/ocaml-multicore/eio).
 
