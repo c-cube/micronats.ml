@@ -62,10 +62,7 @@ type msg = {
   payload: string;
 }
 
-type sub_data = {
-  queue: string option;
-  f: msg -> unit;
-}
+type sub_data = { f: msg -> unit } [@@unboxed]
 
 type t = {
   flow: Eio.Flow.sink_ty Eio.Flow.sink;
@@ -297,7 +294,7 @@ let sub self ~sw ~subject ?queue f =
   let sid = Atomic.fetch_and_add self.next_sid 1 in
   send_sub self ~sid subject queue;
   Eio.Mutex.use_rw ~protect:true self.subs_mutex (fun () ->
-      Int_tbl.replace self.subs sid { queue; f });
+      Int_tbl.replace self.subs sid { f });
   Eio.Switch.on_release sw (fun () -> unsub self sid);
   sid
 
