@@ -1,6 +1,7 @@
 (rule
  (targets calculator.ml calculator.mli)
  (deps calculator.proto)
+ (enabled_if %{bin-available:ocaml-protoc})
  (action
   (run
    ocaml-protoc
@@ -16,10 +17,12 @@
 (library
  (name calculator)
  (modules calculator)
+ (enabled_if %{lib-available:pbrt_services})
  (libraries pbrt pbrt_services pbrt_yojson yojson))
 
 (test
  (name test_rpc)
  (package micronats)
+ (enabled_if %{lib-available:micronats.rpc})
  (libraries micronats micronats.rpc eio_posix calculator)
  (modules test_rpc))
